@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "squoosher"
+version = "1.0.0"
+description = "Batch image compressor CLI — like Squoosh.app but in batch mode"
+requires-python = ">=3.10"
+dependencies = [
+    "Pillow",
+    "click",
+    "rich",
+]
+
+[project.scripts]
+squoosher = "squoosh:main"
