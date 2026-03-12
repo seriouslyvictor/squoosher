@@ -17,6 +17,7 @@ from squoosh import (
     main,
     resize_image,
     scan_files,
+    upscale_image,
 )
 
 
@@ -152,6 +153,45 @@ class TestResizeImage:
         img = Image.new("RGB", (100, 100))
         result = resize_image(img, max_width=100, max_height=100)
         assert result.size == (100, 100)
+
+
+# ---------- upscale_image ----------
+
+class TestUpscaleImage:
+    def test_scale_2x(self):
+        img = Image.new("RGB", (100, 50))
+        result = upscale_image(img, scale=2.0, target_width=None)
+        assert result.size == (200, 100)
+
+    def test_scale_4x(self):
+        img = Image.new("RGB", (100, 50))
+        result = upscale_image(img, scale=4.0, target_width=None)
+        assert result.size == (400, 200)
+
+    def test_target_width(self):
+        img = Image.new("RGB", (100, 50))
+        result = upscale_image(img, scale=None, target_width=300)
+        assert result.size == (300, 150)
+
+    def test_target_width_downscale(self):
+        img = Image.new("RGB", (400, 200))
+        result = upscale_image(img, scale=None, target_width=200)
+        assert result.size == (200, 100)
+
+    def test_no_args_returns_original(self):
+        img = Image.new("RGB", (100, 50))
+        result = upscale_image(img, scale=None, target_width=None)
+        assert result.size == (100, 50)
+
+    def test_bicubic_resample(self):
+        img = Image.new("RGB", (100, 50))
+        result = upscale_image(img, scale=2.0, target_width=None, resample=Image.BICUBIC)
+        assert result.size == (200, 100)
+
+    def test_bilinear_resample(self):
+        img = Image.new("RGB", (100, 50))
+        result = upscale_image(img, scale=2.0, target_width=None, resample=Image.BILINEAR)
+        assert result.size == (200, 100)
 
 
 # ---------- is_animated ----------
@@ -365,3 +405,47 @@ class TestCLI:
         assert result.exit_code == 0
         # Dry run exits before processing, no deletion prompt
         assert (tmp_images / "photo.jpg").exists()
+
+    def test_scale_2x(self, tmp_images, runner):
+        Image.new("RGB", (100, 50), (0, 0, 0)).save(tmp_images / "small.jpg")
+        result = runner.invoke(main, [str(tmp_images), "--scale", "2x"])
+        assert result.exit_code == 0
+        img = Image.open(tmp_images / "small.webp")
+        assert img.size == (200, 100)
+        img.close()
+
+    def test_scale_4x(self, tmp_images, runner):
+        Image.new("RGB", (50, 25), (0, 0, 0)).save(tmp_images / "tiny.jpg")
+        result = runner.invoke(main, [str(tmp_images), "--scale", "4x"])
+        assert result.exit_code == 0
+        img = Image.open(tmp_images / "tiny.webp")
+        assert img.size == (200, 100)
+        img.close()
+
+    def test_target_width(self, tmp_images, runner):
+        Image.new("RGB", (100, 50), (0, 0, 0)).save(tmp_images / "tw.jpg")
+        result = runner.invoke(main, [str(tmp_images), "--target-width", "400"])
+        assert result.exit_code == 0
+        img = Image.open(tmp_images / "tw.webp")
+        assert img.size == (400, 200)
+        img.close()
+
+    def test_scale_and_max_width_conflict(self, tmp_images, runner):
+        result = runner.invoke(main, [str(tmp_images), "--scale", "2x", "--max-width", "100"])
+        assert result.exit_code != 0
+
+    def test_scale_and_target_width_conflict(self, tmp_images, runner):
+        result = runner.invoke(main, [str(tmp_images), "--scale", "2x", "--target-width", "100"])
+        assert result.exit_code != 0
+
+    def test_resample_bicubic(self, tmp_images, runner):
+        result = runner.invoke(main, [str(tmp_images), "--resample", "bicubic"])
+        assert result.exit_code == 0
+
+    def test_scale_shows_in_opts(self, tmp_images, runner):
+        result = runner.invoke(main, [str(tmp_images), "--scale", "2x"])
+        assert "scale=2x" in result.output
+
+    def test_resample_shows_in_opts(self, tmp_images, runner):
+        result = runner.invoke(main, [str(tmp_images), "--resample", "bicubic"])
+        assert "resample=bicubic" in result.output

@@ -18,6 +18,12 @@ ELIGIBLE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif",
 SKIP_DIRS = {"node_modules", ".git", "__pycache__", "dist", "build"}
 LARGE_FILE_THRESHOLD = 50 * 1024 * 1024  # 50 MB
 
+RESAMPLE_METHODS = {
+    "lanczos": Image.LANCZOS,
+    "bicubic": Image.BICUBIC,
+    "bilinear": Image.BILINEAR,
+}
+
 
 def is_hidden(path: Path) -> bool:
     """Check if any component of the path starts with a dot."""
@@ -48,7 +54,8 @@ def scan_files(directory: Path, recursive: bool) -> list[Path]:
     return sorted(files)
 
 
-def resize_image(img: Image.Image, max_width: int | None, max_height: int | None) -> Image.Image:
+def resize_image(img: Image.Image, max_width: int | None, max_height: int | None,
+                 resample: int = Image.LANCZOS) -> Image.Image:
     """Downscale only, maintain aspect ratio."""
     w, h = img.size
     ratio = 1.0
@@ -60,8 +67,24 @@ def resize_image(img: Image.Image, max_width: int | None, max_height: int | None
 
     if ratio < 1.0:
         new_size = (int(w * ratio), int(h * ratio))
-        return img.resize(new_size, Image.LANCZOS)
+        return img.resize(new_size, resample)
     return img
+
+
+def upscale_image(img: Image.Image, scale: float | None, target_width: int | None,
+                  resample: int = Image.LANCZOS) -> Image.Image:
+    """Upscale image by factor or to target width, maintaining aspect ratio."""
+    w, h = img.size
+
+    if scale:
+        new_size = (int(w * scale), int(h * scale))
+    elif target_width:
+        ratio = target_width / w
+        new_size = (target_width, int(h * ratio))
+    else:
+        return img
+
+    return img.resize(new_size, resample)
 
 
 def is_animated(img: Image.Image) -> bool:
@@ -73,13 +96,17 @@ def is_animated(img: Image.Image) -> bool:
 
 
 def convert_static(input_path: Path, output_path: Path, quality: int,
-                   max_width: int | None, max_height: int | None) -> None:
+                   max_width: int | None, max_height: int | None,
+                   scale: float | None = None, target_width: int | None = None,
+                   resample: int = Image.LANCZOS) -> None:
     """Convert a static image to WebP."""
     img = Image.open(input_path)
     img.load()
 
-    if max_width or max_height:
-        img = resize_image(img, max_width, max_height)
+    if scale or target_width:
+        img = upscale_image(img, scale, target_width, resample)
+    elif max_width or max_height:
+        img = resize_image(img, max_width, max_height, resample)
 
     has_alpha = img.mode in ("RGBA", "PA", "LA")
 
@@ -98,7 +125,9 @@ def convert_static(input_path: Path, output_path: Path, quality: int,
 
 
 def convert_animated_gif(input_path: Path, output_path: Path, quality: int,
-                         max_width: int | None, max_height: int | None) -> None:
+                         max_width: int | None, max_height: int | None,
+                         scale: float | None = None, target_width: int | None = None,
+                         resample: int = Image.LANCZOS) -> None:
     """Convert an animated GIF to animated WebP."""
     img = Image.open(input_path)
     frames = []
@@ -107,8 +136,10 @@ def convert_animated_gif(input_path: Path, output_path: Path, quality: int,
     try:
         while True:
             frame = img.copy()
-            if max_width or max_height:
-                frame = resize_image(frame, max_width, max_height)
+            if scale or target_width:
+                frame = upscale_image(frame, scale, target_width, resample)
+            elif max_width or max_height:
+                frame = resize_image(frame, max_width, max_height, resample)
             if frame.mode == "P":
                 frame = frame.convert("RGBA")
             elif frame.mode not in ("RGBA", "RGB"):
@@ -163,13 +194,37 @@ def format_size(size_bytes: int) -> str:
               help="Recompress existing .webp files")
 @click.option("--delete-originals", is_flag=True, default=False,
               help="Send original files to recycle bin after successful conversion")
+@click.option("--scale", type=click.Choice(["2x", "4x"]), default=None,
+              help="Upscale images by factor (2x or 4x)")
+@click.option("--target-width", type=int, default=None,
+              help="Resize images to exact width in pixels (maintains aspect ratio)")
+@click.option("--resample", type=click.Choice(["lanczos", "bicubic", "bilinear"]),
+              default="lanczos", help="Resampling algorithm (default: lanczos)")
 def main(directory: Path, quality: int, max_width: int | None, max_height: int | None,
          dry_run: bool, recursive: bool, skip_existing: bool, verbose: bool,
-         recompress: bool, delete_originals: bool) -> None:
+         recompress: bool, delete_originals: bool,
+         scale: str | None, target_width: int | None, resample: str) -> None:
     """Batch compress images to WebP format.
 
     DIRECTORY is the path to scan for images.
     """
+    # Validate mutually exclusive resize options
+    upscale_opts = [scale, target_width]
+    downscale_opts = [max_width, max_height]
+    if any(upscale_opts) and any(downscale_opts):
+        console.print("[red]ERROR:[/red] --scale/--target-width cannot be combined with --max-width/--max-height")
+        sys.exit(1)
+    if scale and target_width:
+        console.print("[red]ERROR:[/red] --scale and --target-width cannot be used together")
+        sys.exit(1)
+
+    # Parse scale factor
+    scale_factor: float | None = None
+    if scale:
+        scale_factor = float(scale.rstrip("x"))
+
+    resample_filter = RESAMPLE_METHODS[resample]
+
     directory = directory.resolve()
     console.print(f"\n[bold blue]Scanning[/bold blue] {directory}...\n")
 
@@ -205,10 +260,16 @@ def main(directory: Path, quality: int, max_width: int | None, max_height: int |
 
     # --- Processing Phase ---
     opts_parts = [f"quality={quality}"]
+    if scale_factor:
+        opts_parts.append(f"scale={scale}")
+    if target_width:
+        opts_parts.append(f"target_width={target_width}")
     if max_width:
         opts_parts.append(f"max_width={max_width}")
     if max_height:
         opts_parts.append(f"max_height={max_height}")
+    if resample != "lanczos":
+        opts_parts.append(f"resample={resample}")
     console.print(f"[bold blue]Processing[/bold blue] with {', '.join(opts_parts)}\n")
 
     processed = 0
@@ -256,10 +317,12 @@ def main(directory: Path, quality: int, max_width: int | None, max_height: int |
                 img = Image.open(file_path)
 
                 if is_animated(img):
-                    convert_animated_gif(file_path, output_path, quality, max_width, max_height)
+                    convert_animated_gif(file_path, output_path, quality, max_width, max_height,
+                                         scale_factor, target_width, resample_filter)
                 else:
                     img.close()
-                    convert_static(file_path, output_path, quality, max_width, max_height)
+                    convert_static(file_path, output_path, quality, max_width, max_height,
+                                   scale_factor, target_width, resample_filter)
 
                 original_size = file_size
                 compressed_size = output_path.stat().st_size

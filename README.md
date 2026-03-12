@@ -36,6 +36,16 @@ squoosher /path/to/project --quality 60
 # Resize images (downscale only, keeps aspect ratio)
 squoosher /path/to/project --max-width 1920 --max-height 1080
 
+# Upscale images by 2x or 4x
+squoosher /path/to/project --scale 2x
+squoosher /path/to/project --scale 4x
+
+# Resize to a specific width (maintains aspect ratio, up or down)
+squoosher /path/to/project --target-width 1920
+
+# Choose resampling algorithm (default: lanczos)
+squoosher /path/to/project --scale 2x --resample bicubic
+
 # Dry run — list files without converting
 squoosher /path/to/project --dry-run
 
@@ -48,9 +58,30 @@ squoosher /path/to/project --no-recursive
 # Recompress existing .webp files
 squoosher /path/to/project --recompress
 
+# Delete originals after conversion (sends to recycle bin, asks for confirmation)
+squoosher /path/to/project --delete-originals
+
 # Verbose output with per-file breakdown
 squoosher /path/to/project --verbose
 ```
+
+### Resizing Options
+
+| Option | Direction | Description |
+|--------|-----------|-------------|
+| `--max-width` / `--max-height` | Downscale only | Cap dimensions, never upscales |
+| `--scale 2x` / `--scale 4x` | Upscale | Multiply dimensions by factor |
+| `--target-width N` | Up or down | Resize to exact width, keeps aspect ratio |
+
+These are mutually exclusive — you can use either downscale (`--max-width`/`--max-height`) or upscale (`--scale`/`--target-width`), but not both.
+
+### Resampling Algorithms
+
+| Algorithm | Best for | Trade-off |
+|-----------|----------|-----------|
+| `lanczos` (default) | Sharp detail preservation | Slightly slower, minimal ringing |
+| `bicubic` | Smooth photos | Softer than lanczos, no ringing |
+| `bilinear` | Fast previews | Fastest, least detail |
 
 ### Supported Formats
 
@@ -141,6 +172,16 @@ squoosher /caminho/do/projeto --quality 60
 # Redimensionar imagens (apenas reduz, mantem proporcao)
 squoosher /caminho/do/projeto --max-width 1920 --max-height 1080
 
+# Ampliar imagens em 2x ou 4x
+squoosher /caminho/do/projeto --scale 2x
+squoosher /caminho/do/projeto --scale 4x
+
+# Redimensionar para uma largura especifica (mantem proporcao, amplia ou reduz)
+squoosher /caminho/do/projeto --target-width 1920
+
+# Escolher algoritmo de reamostragem (padrao: lanczos)
+squoosher /caminho/do/projeto --scale 2x --resample bicubic
+
 # Simulacao — lista os arquivos sem converter
 squoosher /caminho/do/projeto --dry-run
 
@@ -153,9 +194,30 @@ squoosher /caminho/do/projeto --no-recursive
 # Recomprimir arquivos .webp existentes
 squoosher /caminho/do/projeto --recompress
 
+# Deletar originais apos conversao (envia para lixeira, pede confirmacao)
+squoosher /caminho/do/projeto --delete-originals
+
 # Saida detalhada com resultado por arquivo
 squoosher /caminho/do/projeto --verbose
 ```
+
+### Opcoes de Redimensionamento
+
+| Opcao | Direcao | Descricao |
+|-------|---------|-----------|
+| `--max-width` / `--max-height` | Apenas reduz | Limita dimensoes, nunca amplia |
+| `--scale 2x` / `--scale 4x` | Amplia | Multiplica dimensoes pelo fator |
+| `--target-width N` | Amplia ou reduz | Redimensiona para largura exata, mantem proporcao |
+
+Essas opcoes sao mutuamente exclusivas — voce pode usar reducao (`--max-width`/`--max-height`) ou ampliacao (`--scale`/`--target-width`), mas nao ambos.
+
+### Algoritmos de Reamostragem
+
+| Algoritmo | Melhor para | Compensacao |
+|-----------|-------------|-------------|
+| `lanczos` (padrao) | Preservacao nitida de detalhes | Levemente mais lento, ringing minimo |
+| `bicubic` | Fotos suaves | Mais suave que lanczos, sem ringing |
+| `bilinear` | Previews rapidos | Mais rapido, menos detalhes |
 
 ### Formatos Suportados
 

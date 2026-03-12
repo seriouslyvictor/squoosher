@@ -11,7 +11,11 @@ dependencies = [
     "Pillow",
     "click",
     "rich",
+    "send2trash",
 ]
+
+[tool.setuptools]
+py-modules = ["squoosh"]
 
 [project.scripts]
 squoosher = "squoosh:main"

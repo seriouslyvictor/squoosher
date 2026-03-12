@@ -1,3 +1,4 @@
 Pillow
 click
 rich
+send2trash
