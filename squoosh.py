@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Batch image compressor CLI — like Squoosh.app but in batch mode."""
 
-import os
 import sys
 from pathlib import Path
 
@@ -32,25 +31,17 @@ def is_hidden(path: Path) -> bool:
 
 def scan_files(directory: Path, recursive: bool) -> list[Path]:
     """Walk directory and collect eligible image files."""
+    candidates = directory.rglob("*") if recursive else directory.iterdir()
     files = []
-    if recursive:
-        for path in directory.rglob("*"):
-            if path.is_symlink():
-                continue
-            if any(skip in path.parts for skip in SKIP_DIRS):
-                continue
-            if is_hidden(path.relative_to(directory)):
-                continue
-            if path.is_file() and path.suffix.lower() in ELIGIBLE_EXTENSIONS:
-                files.append(path)
-    else:
-        for path in directory.iterdir():
-            if path.is_symlink():
-                continue
-            if is_hidden(path.relative_to(directory)):
-                continue
-            if path.is_file() and path.suffix.lower() in ELIGIBLE_EXTENSIONS:
-                files.append(path)
+    for path in candidates:
+        if path.is_symlink():
+            continue
+        if recursive and any(skip in path.parts for skip in SKIP_DIRS):
+            continue
+        if is_hidden(path.relative_to(directory)):
+            continue
+        if path.is_file() and path.suffix.lower() in ELIGIBLE_EXTENSIONS:
+            files.append(path)
     return sorted(files)
 
 
@@ -89,10 +80,7 @@ def upscale_image(img: Image.Image, scale: float | None, target_width: int | Non
 
 def is_animated(img: Image.Image) -> bool:
     """Check if image has multiple frames (animated GIF)."""
-    try:
-        return getattr(img, "n_frames", 1) > 1
-    except Exception:
-        return False
+    return getattr(img, "n_frames", 1) > 1
 
 
 def convert_static(input_path: Path, output_path: Path, quality: int,
@@ -112,9 +100,7 @@ def convert_static(input_path: Path, output_path: Path, quality: int,
 
     if not has_alpha and img.mode not in ("RGB", "L"):
         img = img.convert("RGB")
-    elif img.mode == "PA":
-        img = img.convert("RGBA")
-    elif img.mode == "LA":
+    elif img.mode in ("PA", "LA"):
         img = img.convert("RGBA")
 
     save_kwargs = {"format": "webp", "quality": quality}
@@ -140,9 +126,7 @@ def convert_animated_gif(input_path: Path, output_path: Path, quality: int,
                 frame = upscale_image(frame, scale, target_width, resample)
             elif max_width or max_height:
                 frame = resize_image(frame, max_width, max_height, resample)
-            if frame.mode == "P":
-                frame = frame.convert("RGBA")
-            elif frame.mode not in ("RGBA", "RGB"):
+            if frame.mode not in ("RGBA", "RGB"):
                 frame = frame.convert("RGBA")
             frames.append(frame)
             durations.append(img.info.get("duration", 100))
@@ -352,10 +336,8 @@ def main(directory: Path, quality: int, max_width: int | None, max_height: int |
     table.add_column("Value")
 
     table.add_row("Processed", str(processed))
-    if skipped:
-        table.add_row("Skipped", f"{skipped} (already exist / collision)")
-    else:
-        table.add_row("Skipped", "0")
+    skipped_label = f"{skipped} (already exist / collision)" if skipped else "0"
+    table.add_row("Skipped", skipped_label)
     table.add_row("Failed", str(failed))
     table.add_row("", "")
     table.add_row("Original size", format_size(original_total))
@@ -392,7 +374,7 @@ def main(directory: Path, quality: int, max_width: int | None, max_height: int |
     # --- Delete Originals Phase ---
     if delete_originals and processed > 0:
         successful_files = [
-            Path(directory / name) for name, orig, comp, status in per_file_results if status == "OK"
+            directory / name for name, _, _, status in per_file_results if status == "OK"
         ]
         console.print()
         console.print(f"[bold yellow]WARNING:[/bold yellow] This will send [bold]{len(successful_files)}[/bold] original files to the recycle bin.")
