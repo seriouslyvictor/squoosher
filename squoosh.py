@@ -10,6 +10,7 @@ from PIL import Image
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, MofNCompleteColumn
 from rich.table import Table
+from send2trash import send2trash
 
 console = Console()
 
@@ -160,9 +161,11 @@ def format_size(size_bytes: int) -> str:
               help="Show per-file breakdown in report")
 @click.option("--recompress", is_flag=True, default=False,
               help="Recompress existing .webp files")
+@click.option("--delete-originals", is_flag=True, default=False,
+              help="Send original files to recycle bin after successful conversion")
 def main(directory: Path, quality: int, max_width: int | None, max_height: int | None,
          dry_run: bool, recursive: bool, skip_existing: bool, verbose: bool,
-         recompress: bool) -> None:
+         recompress: bool, delete_originals: bool) -> None:
     """Batch compress images to WebP format.
 
     DIRECTORY is the path to scan for images.
@@ -322,6 +325,31 @@ def main(directory: Path, quality: int, max_width: int | None, max_height: int |
                 detail.add_row(name, "-", "-", "-", f"[red]{status}[/red]")
 
         console.print(detail)
+
+    # --- Delete Originals Phase ---
+    if delete_originals and processed > 0:
+        successful_files = [
+            Path(directory / name) for name, orig, comp, status in per_file_results if status == "OK"
+        ]
+        console.print()
+        console.print(f"[bold yellow]WARNING:[/bold yellow] This will send [bold]{len(successful_files)}[/bold] original files to the recycle bin.")
+        console.print("[yellow]This action can be undone by restoring files from your recycle bin.[/yellow]\n")
+
+        if click.confirm("Proceed with deleting originals?", default=False):
+            deleted = 0
+            delete_failed = 0
+            for file_path in successful_files:
+                try:
+                    send2trash(file_path)
+                    deleted += 1
+                except Exception as e:
+                    console.print(f"  [red]ERROR[/red] Could not delete {file_path.relative_to(directory)}: {e}")
+                    delete_failed += 1
+            console.print(f"\n[bold green]Deleted:[/bold green] {deleted} files sent to recycle bin")
+            if delete_failed:
+                console.print(f"[bold red]Failed to delete:[/bold red] {delete_failed} files")
+        else:
+            console.print("[cyan]Skipped — no files were deleted.[/cyan]")
 
     console.print()
 

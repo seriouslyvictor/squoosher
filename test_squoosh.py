@@ -331,3 +331,37 @@ class TestCLI:
         Image.new("RGB", (10, 10), (0, 0, 0)).save(webp_path, format="webp")
         result = runner.invoke(main, [str(tmp_images), "--recompress"])
         assert result.exit_code == 0
+
+    def test_delete_originals_confirmed(self, tmp_images, runner, monkeypatch):
+        # Patch send2trash to just delete the file (no real recycle bin in tests)
+        import squoosh
+        deleted_files = []
+        monkeypatch.setattr(squoosh, "send2trash", lambda p: (deleted_files.append(p), p.unlink() if hasattr(p, 'unlink') else os.unlink(p)))
+        result = runner.invoke(main, [str(tmp_images), "--delete-originals"], input="y\n")
+        assert result.exit_code == 0
+        assert "WARNING" in result.output
+        assert "recycle bin" in result.output.lower()
+        assert len(deleted_files) > 0
+        # Originals should be gone, webp files should remain
+        assert not (tmp_images / "photo.jpg").exists()
+        assert (tmp_images / "photo.webp").exists()
+
+    def test_delete_originals_declined(self, tmp_images, runner):
+        result = runner.invoke(main, [str(tmp_images), "--delete-originals"], input="n\n")
+        assert result.exit_code == 0
+        assert "no files were deleted" in result.output.lower()
+        # Originals should still exist
+        assert (tmp_images / "photo.jpg").exists()
+
+    def test_delete_originals_without_flag(self, tmp_images, runner):
+        result = runner.invoke(main, [str(tmp_images)])
+        assert result.exit_code == 0
+        # Originals should still exist
+        assert (tmp_images / "photo.jpg").exists()
+        assert "WARNING" not in result.output
+
+    def test_delete_originals_dry_run(self, tmp_images, runner):
+        result = runner.invoke(main, [str(tmp_images), "--delete-originals", "--dry-run"])
+        assert result.exit_code == 0
+        # Dry run exits before processing, no deletion prompt
+        assert (tmp_images / "photo.jpg").exists()
